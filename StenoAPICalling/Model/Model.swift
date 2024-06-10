@@ -19,7 +19,7 @@ struct Datum: Codable {
     let id, name, path, path1: String
     let extPath: EXTPath
     let extPath1: String
-
+    
     enum CodingKeys: String, CodingKey {
         case id, name, path, path1
         case extPath = "ext_path"
@@ -29,5 +29,6 @@ struct Datum: Codable {
 
 enum EXTPath: String, Codable {
     case pdf = "pdf"
+    case mp4 = "mp4"
 }
 

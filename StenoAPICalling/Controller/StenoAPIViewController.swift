@@ -13,17 +13,22 @@ class StenoAPIViewController: UIViewController {
     @IBOutlet weak var tableView: UITableView!
     
     var noInternetView: NoInternetView!
+    var noDataView: NoDataView!
     var query: String?
     var items: [Datum] = []
     var isLoading = true
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
+        
         tableView.delegate = self
         tableView.dataSource = self
+        self.tableView.register(UINib(nibName: "stenoTableViewCell", bundle: nil), forCellReuseIdentifier: "stenoTableViewCell")
+        self.tableView.register(UINib(nibName: "TableViewCell", bundle: nil), forCellReuseIdentifier: "TableViewCell")
+        tableView.register(SkeletonTableViewCell.self, forCellReuseIdentifier: "SkeletonCell")
         
         setupNoInternetView()
+        setupNoDataView()
         
         if let query = query {
             if isConnectedToInternet() {
@@ -50,6 +55,21 @@ class StenoAPIViewController: UIViewController {
         noInternetView.isHidden = true
     }
     
+    func setupNoDataView() {
+        noDataView = NoDataView()
+        noDataView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(noDataView)
+        
+        NSLayoutConstraint.activate([
+            noDataView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            noDataView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            noDataView.topAnchor.constraint(equalTo: view.topAnchor),
+            noDataView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        
+        noDataView.isHidden = true
+    }
+    
     @objc func retryButtonTapped() {
         if isConnectedToInternet() {
             noInternetView.isHidden = true
@@ -60,11 +80,12 @@ class StenoAPIViewController: UIViewController {
     }
     
     func fetchData() {
+        showSkeletonLoader()
         guard let nameValue = query else {
             print("Name value is missing")
             return
         }
-
+        
         let url = "http://stenoapp.gautamsteno.com/api/get_words_practise_list"
         AF.request(url, method: .post, parameters: ["name": nameValue], encoding: URLEncoding.default).responseJSON { response in
             switch response.result {
@@ -72,9 +93,16 @@ class StenoAPIViewController: UIViewController {
                 do {
                     let jsonData = try JSONSerialization.data(withJSONObject: value)
                     let welcome = try JSONDecoder().decode(Welcome.self, from: jsonData)
-                    self.items = welcome.data
-                    DispatchQueue.main.async {
-                        self.tableView.reloadData()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.hideSkeletonLoader()
+                        if welcome.status == 0 {
+                            self.items = welcome.data
+                            DispatchQueue.main.async {
+                                self.tableView.reloadData()
+                            }
+                        } else {
+                            self.showNoDataView()
+                        }
                     }
                 } catch {
                     print("Error decoding JSON: \(error)")
@@ -95,6 +123,11 @@ class StenoAPIViewController: UIViewController {
         tableView.reloadData()
     }
     
+    func showNoDataView() {
+        noDataView.isHidden = false
+        tableView.isHidden = true
+    }
+    
     func showNoInternetView() {
         DispatchQueue.main.async {
             self.noInternetView.isHidden = false
@@ -111,28 +144,55 @@ class StenoAPIViewController: UIViewController {
         let networkManager = NetworkReachabilityManager()
         return networkManager?.isReachable ?? false
     }
-    
-    
-
 }
 
 
 // MARK: - TableView Dalegate & Datasource
 extension StenoAPIViewController: UITableViewDelegate, UITableViewDataSource{
+    
+    func numberOfSectionsInTableView(tableView: UITableView) -> Int {
+        return 1
+    }
+    
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return items.count
+        return isLoading ? 10 : items.count
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "TableViewCell") as! TableViewCell
-        
-        let datum = items[indexPath.row]
-           cell.configure(with: datum)
-        
-        return cell
+        if indexPath.row == 0 {
+            let Cell = tableView.dequeueReusableCell(withIdentifier: "stenoTableViewCell") as! stenoTableViewCell
+            
+            return Cell
+        } else {
+            if isLoading {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "SkeletonCell", for: indexPath) as! SkeletonTableViewCell
+                return cell
+            } else {
+                guard let cell = tableView.dequeueReusableCell(withIdentifier: "TableViewCell", for: indexPath) as? TableViewCell else {
+                    return UITableViewCell()
+                }
+                let datum = items[indexPath.row]
+                cell.idLbl.text = datum.id
+                cell.nameLbl.text = datum.name
+                switch datum.extPath {
+                case .pdf:
+                    cell.extPathIcon.image = UIImage(named: "pdf")
+                case .mp4:
+                    cell.extPathIcon.image = UIImage(named: "audio")
+                default:
+                    cell.extPathIcon.image = nil
+                }
+                cell.extPath1Lbl.text = datum.extPath1
+                return cell
+            }
+        }
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 185
+        if indexPath.row == 0 {
+            return 57
+        } else {
+            return 65
+        }
     }
 }
